@@ -77,8 +77,7 @@ class Timer:
         if self.started:
             return int(elapsed)
         else:
-            for _ in range(0, 10):
-                print('The Timer has not been started!', end='\r')
+            print('The Timer has not been started!', end='\r')
 
 timer = Timer()
 
@@ -111,6 +110,9 @@ class Solenoid:
         return B_cent
 
     def _get_B_z(self, z, N):
+        """n = N / self.L
+        B = self.mu_0 * n * self.I * (1 - (z**2 / self.L**2))
+        return B"""
         n = N / self.L  # Coil density
         for s in np.arange(-self.L/2, self.L/2, self.dl):
             r = np.sqrt(z**2 + (s - z)**2)
@@ -225,6 +227,7 @@ if used_mem_lib:
 
 # Plot the results
 plt.figure(figsize=(10, 6))
+plt.plot(N_arr, B_avg_arr, label='Average Magnetic Field in Solenoid')
 plt.plot(N_arr, B_cent_arr, label='Magnetic Field at Center')
 plt.axhline(y=tol_band_upper, color='r', linestyle='--', label=f'{tol_percent * 100}% tolerance Band')
 plt.axhline(y=tol_band_lower, color='r', linestyle='--')
@@ -235,3 +238,4 @@ plt.title('Magnetic Field in Solenoid vs. Number of Turns')
 plt.legend()
 plt.grid(True)
 plt.show()
+exit()
