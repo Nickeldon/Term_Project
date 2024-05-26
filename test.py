@@ -97,13 +97,13 @@ def print_progress(iter, max_iter, head, asyncIter = ['', '']):
 
 class Solenoid:
     def __init__(self, I, L):
-        self.I = I
-        self.L = L
-        self.mu_0 = 4 * np.pi * 1e-7
-        self.tol = tol_percent
+        self.I = I # Current of the solenoid (constant)
+        self.L = L # Length of the Solenoid (constant)
+        self.mu_0 = 4 * np.pi * 1e-7 #... mu_0
+        self.tol = tol_percent # The tolerance of our ideal Magnetic field value
         self.dl = 1  # Small length element for integration
-        self.B_0= 0
-        self.B_avg_cache = {}
+        self.B_0= 0 # Initial value of B for B_z (Basically just a declaration)
+        self.B_avg_cache = {} # Keeps in cache the previously calculated Magnetic field values for performance purposes
 
     def _get_B_center(self, N):
         n = N / self.L
@@ -111,7 +111,6 @@ class Solenoid:
         return B_cent
 
     def _get_B_z(self, z, N):
-            
         n = N / self.L  # Coil density
         for s in np.arange(-self.L/2, self.L/2, self.dl):
             r = np.sqrt(z**2 + (s - z)**2)
