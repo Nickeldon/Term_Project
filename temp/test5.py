@@ -9,7 +9,7 @@ used_mem_lib = True
 try:
     import psutil
     import threading
-except:
+except ImportError:
     used_mem_lib = False
     print("""
     ###                                                                            ###
@@ -17,36 +17,32 @@ except:
     ###                                                                            ###""")
 
 start_time = 0
-class setInterval: #I use JS and like the setInterval function
+
+class setInterval:  # I use JS and like the setInterval function
     def __init__(self, func, ms):
         self.func = func
         self.ms = ms
         self.thread = threading.Timer(self.ms / 1000, self.func_wrapper)
-        
+
     def func_wrapper(self):
         setInterval(self.func, self.ms).init()
         self.func()
-    
-    def init(self):    
-        # If I don't use another thread, it will just stay stuck in this function as it will loop indefenitely
+
+    def init(self):
         self.thread.start()
-    
+
     def abort(self):
         self.thread.cancel()
-        
 
 # Calculate the memory consumption in a different interval that iterates more slowly for more performance
 mem_consump = 0
 thread_interv = None
 
-#Source from Charrat Mohamed's Projectile Motion Assignment
-#Function to calculate the memory used by the simulation
+# Source from Charrat Mohamed's Projectile Motion Assignment
+# Function to calculate the memory used by the simulation
 def get_Mem_Usage():
-    global mem_consump #According to Stack Overflow [To update a global variable in a local scoped function]
+    global mem_consump  # According to Stack Overflow [To update a global variable in a local scoped function]
     pr = psutil.Process(os.getpid())
-    
-    # According to https://pythonhow.com/how/limit-floats-to-two-decimal-points/ [To limit floats to two decimal points]
-    
     mem_consump = round(pr.memory_info()[0] / float(2 ** 20), 2)
     return mem_consump
 
@@ -58,7 +54,7 @@ if used_mem_lib:
 bar_len = 50
 update_interval = 100
 
-#The percentage tolerance for the ideal average Magnetic field value
+# The percentage tolerance for the ideal average Magnetic field value
 tol_percent = 0.075
 
 B_avg_N = []
@@ -67,11 +63,11 @@ class Timer:
     def __init__(self):
         self.t_0 = 0
         self.started = False
-        
+
     def start_timer(self):
         self.t_0 = time.time()
         self.started = True
-    
+
     def get_timer(self):
         elapsed = time.time() - self.t_0
         if self.started:
@@ -83,66 +79,77 @@ timer = Timer()
 
 timer.start_timer()
 
-def print_progress(iter, max_iter, head, asyncIter = ['', '']):
+def print_progress(iter, max_iter, head, asyncIter=['', '']):
     percent = int(100 * (iter / int(max_iter)))
+    disp_percent = percent if percent >= 10 else '0' + str(percent)
     blocks = int((bar_len * iter / int(max_iter)))
     bar = '█' * blocks + '-' * (bar_len - blocks)
     asyncIter_arr = asyncIter
-        
-    print(f'{head} |{bar}| {percent}% ({iter}/{max_iter}) | ({asyncIter_arr[0]} / {asyncIter_arr[1]}) | Mem usage: {mem_consump} MB | elapsed_time: {timer.get_timer()}s  ', end='\r\r')
+    print(f'{head} |{bar}| {disp_percent}% ({iter}/{max_iter}) | ({asyncIter_arr[0]} / {asyncIter_arr[1]}) | Mem usage: {mem_consump} MB | elapsed_time: {timer.get_timer()}s  ', end='\r\r')
     print('\r', end='\r')
     if iter == max_iter:
         print('\r', end='\r')
 
 class Solenoid:
-    def __init__(self, I, L):
-        self.I = I # Current of the solenoid (constant)
-        self.L = L # Length of the Solenoid (constant)
-        self.mu_0 = 4 * np.pi * 1e-7 #... mu_0
-        self.tol = tol_percent # The tolerance of our ideal Magnetic field value
-        self.dl = 1  # Small length element for integration
-        self.B_0= 0 # Initial value of B for B_z (Basically just a declaration)
-        self.B_avg_cache = {} # Keeps in cache the previously calculated Magnetic field values for performance purposes
+    def __init__(self, I, L, R):
+        self.I = I  # Current of the solenoid (constant)
+        self.L = L  # Length of the Solenoid (constant)
+        self.R = R
+        self.mu_0 = 4 * np.pi * 1e-7  # mu_0
+        self.tol = tol_percent  # The tolerance of our ideal Magnetic field value
+        self.B_avg_cache = {}  # Keeps in cache the previously calculated Magnetic field values for performance purposes
 
     def _get_B_center(self, N):
         n = N / self.L
         B_cent = self.mu_0 * n * self.I
         return B_cent
 
-    def _get_B_z(self, z, N):
-        """n = N / self.L
-        B = self.mu_0 * n * self.I * (1 - (z**2 / self.L**2))
-        return B"""
-        n = N / self.L  # Coil density
-        for s in np.arange(-self.L/2, self.L/2, self.dl):
-            r = np.sqrt(z**2 + (s - z)**2)
-            dB = (self.mu_0 * n * self.I * self.dl) / (2 * np.pi * r)
-            self.B_0 += dB
-        return self.B_0
+    def _get_a0(self, z):
+        # Placeholder for a0(z) based on Bz(0, 0, z)
+        return self._get_B_center(N=1)
 
-    def _get_avg_B(self, N, iterations = None, showProg = False, skip_bar=False):
+    def _get_B_z(self, rho, z, N):
+        # McDonald model series expansion for B_z(rho, z)
+        a0 = self._get_a0(z)
+        Bz = 0
+        for n in range(8):  # Sum up to 7th order
+            a0_n = np.polyder(np.poly1d([a0]), n)
+            Bz += ((-1) ** n * a0_n(z) / (math.factorial(n) ** 2) * (rho / 2) ** (2 * n))
+        return Bz
+
+    def _get_B_rho(self, rho, z, N):
+        # McDonald model series expansion for B_rho(rho, z)
+        a0 = self._get_a0(z)
+        Brho = 0
+        for n in range(8):  # Sum up to 7th order
+            a0_n = np.polyder(np.poly1d([a0]), n)
+            Brho += ((-1) ** (n + 1) * a0_n(z) / (math.factorial(n) * math.factorial(n + 1)) * (rho / 2) ** (2 * n + 1))
+        return Brho
+
+    def _get_avg_B(self, N, iterations=None, showProg=False, skip_bar=False):
         if N in self.B_avg_cache:  # Check if the result is already in the cache
             return self.B_avg_cache[N]
 
-        z_pts = np.linspace(-self.L / 2, self.L / 2, 100000)
+        z_pts = np.linspace(-self.L / 2, self.L / 2, 10000)
         B_pts = []
         for i, val in enumerate(z_pts):
-            B_pts.append(self._get_B_z(val, N))
+            B_pts.append(self._get_B_z(0, val, N))
             if not skip_bar and (i % update_interval == 0 or i == len(z_pts) - 1):
                 if not iterations:
                     iter_arr = ('', '')
                 else:
                     iter_arr = iterations
-                print_progress(i + 1, len(z_pts), head='Calculating B:', asyncIter = iter_arr)
+                print_progress(i + 1, len(z_pts), head='Calculating B:', asyncIter=iter_arr)
         B_avg = np.mean(B_pts)
+        B_avg_N.append(B_avg)
         self.B_avg_cache[N] = B_avg  # Store the result in the cache
         return B_avg
 
     def _verif_if_within_tol(self, N):
-        print(f'Initializing simulation... ** Note: The initialization will take a long time if the iteration value is high **', end='\r')
+        print(f'Initializing simulation... elapsed time: {timer.get_timer()}s', end='\r')
         B_cent = self._get_B_center(N)
         B_avg = self._get_avg_B(N, skip_bar=True)
-        return abs(B_avg - B_cent) / B_cent <= self.tol
+        return abs(B_avg - 9) / 9 <= self.tol
 
 class GoldenSectionSearch:
     def __init__(self, f, a, b, tol=1e-5):
@@ -151,12 +158,12 @@ class GoldenSectionSearch:
         self.b = b
         self.tol = tol
         self.gr = (np.sqrt(5) + 1) / 2
-    
+
     def estim_max_iter(self):
-        return math.ceil(math.log(self.tol/abs(self.b-self.a)) / math.log(1/self.gr))
+        return math.ceil(math.log(self.tol / abs(self.b - self.a)) / math.log(1 / self.gr))
 
     def search(self):
-        es_max = self.estim_max_iter() # Estimated maximum number of iterations through the golden section search
+        es_max = self.estim_max_iter()  # Estimated maximum number of iterations through the golden section search
         c = self.b - (self.b - self.a) / self.gr
         d = self.a + (self.b - self.a) / self.gr
         i = 0
@@ -175,15 +182,16 @@ class GoldenSectionSearch:
 # STARTING CONSTANTS
 I = 75  # Current in the solenoid (Will not change as is irrelevant to experiment) (A)
 L = 0.5  # Length of the solenoid (m)
+R = 0.1
 
 # Create Solenoid instance
-solenoid = Solenoid(I, L)
+solenoid = Solenoid(I, L, R)
 
 def objective_N(N, iter_state):
     B_c = solenoid._get_B_center(N)
-    B_avg_val = solenoid._get_avg_B(N, iterations = iter_state, skip_bar=False, showProg=True)
+    B_avg_val = solenoid._get_avg_B(N, iterations=iter_state, skip_bar=False, showProg=True)
     B_avg_N.append(B_avg_val)
-    return abs(B_avg_val - B_c) / B_c
+    return abs(B_avg_val - 9)
 
 def find_initial_bounds():
     N = 1
@@ -205,37 +213,20 @@ gss = GoldenSectionSearch(objective_N, a_N, b_N)
 # Optimize for the minimum number of turns
 optimal_N, i = gss.search()
 
-# Print the optimal number of coils
-print(f"The optimal number of coils (N) for a uniform magnetic field within {tol_percent * 100}% tolerance is: {optimal_N}")
+# Clear console
+os.system('cls')
 
-# Calculate the magnetic fields for plotting
-N_arr = np.linspace(a_N, b_N, 2 * i)
-B_avg_arr = []
-print('The graph is being drawn. Please wait')
-for i, N in enumerate(N_arr):
-    B_avg_arr.append(solenoid._get_avg_B(N, showProg = True, skip_bar=True))
-    print_progress(i + 1, len(N_arr), head='Calculating B_avg for plot:')
-B_cent_arr = [solenoid._get_B_center(N) for N in N_arr]
+# Display results
+print(f"""
+Finished simulation in: {timer.get_timer()}s
+Optimal N: {round(optimal_N)}
+Magnetic Field Value of optimal N: {B_avg_N[-1]} T
+Amount of Iterations: {i}
+Percentage Error: {round(abs(B_avg_N[-1] - 9) / 9 * 100, 2)}%
+Memory used: {mem_consump} MB
 
-# Calculate the 5% tolerance bands
-B_mid_opt = solenoid._get_B_center(optimal_N)
-tol_band_upper = B_mid_opt * (1 + solenoid.tol)
-tol_band_lower = B_mid_opt * (1 - solenoid.tol)
+Note:
+I would like to thank Prof. Kirk T. McDonald of Princeton University for the work on 'On the Magnetic Field of a Finite Solenoid' and Prof. Charrat Mohamed for the CS50P Introduction course by HarvardX.""")
 
 if used_mem_lib:
     thread_interv.abort()
-
-# Plot the results
-plt.figure(figsize=(10, 6))
-plt.plot(N_arr, B_avg_arr, label='Average Magnetic Field in Solenoid')
-plt.plot(N_arr, B_cent_arr, label='Magnetic Field at Center')
-plt.axhline(y=tol_band_upper, color='r', linestyle='--', label=f'{tol_percent * 100}% tolerance Band')
-plt.axhline(y=tol_band_lower, color='r', linestyle='--')
-plt.axvline(x=optimal_N, color='g', linestyle='--', label='Optimal Number of Turns')
-plt.xlabel('Number of Turns (N)')
-plt.ylabel('Magnetic Field (T)')
-plt.title('Magnetic Field in Solenoid vs. Number of Turns')
-plt.legend()
-plt.grid(True)
-plt.show()
-exit()
